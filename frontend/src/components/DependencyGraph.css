@@ -1,0 +1,65 @@
+.dependency-graph-container {
+  background: rgba(26, 26, 46, 0.6);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.dependency-graph-container h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #f8fafc;
+  margin-bottom: 0.5rem;
+}
+
+.graph-info {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dependency-graph {
+  background: rgba(15, 15, 35, 0.4);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.dependency-legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.no-data {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 500px;
+  color: #94a3b8;
+  font-size: 1rem;
+}
