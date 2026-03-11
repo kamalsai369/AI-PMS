@@ -14,7 +14,7 @@ const Dashboard = () => {
   const [error, setError] = useState(null)
   const [projectStatus, setProjectStatus] = useState(null)
   const [highPriorityTasks, setHighPriorityTasks] = useState([])
-  const [resourceConflicts, setResourceConflicts] = useState([])
+  const [resourceConflicts, setResourceConflicts] = useState({ conflicts: [], resource_allocation: [] })
   const [meetingInsights, setMeetingInsights] = useState(null)
   const [allTasks, setAllTasks] = useState([])
 
@@ -37,7 +37,7 @@ const Dashboard = () => {
       setProjectStatus(statusRes.data)
       setHighPriorityTasks(tasksRes.data.tasks || [])
       setAllTasks(tasksRes.data.all_tasks || [])
-      setResourceConflicts(conflictsRes.data.conflicts || [])
+      setResourceConflicts(conflictsRes.data || { conflicts: [], resource_allocation: [] })
       if (insightsRes) setMeetingInsights(insightsRes.data)
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
@@ -88,50 +88,73 @@ const Dashboard = () => {
     { name: 'Not Started', value: Math.floor(remainingTasks * 0.7) }
   ].filter(item => item.value > 0)
 
-  // Prepare resource heatmap data
-  const resourceHeatmapData = resourceConflicts.slice(0, 10).map(conflict => ({
-    resource: conflict.resource || 'Unknown',
-    taskCount: conflict.task_count || 0
-  }))
+  // Prepare resource heatmap data - use aggregated allocation data
+  const resourceHeatmapData = resourceConflicts.resource_allocation || []
 
-  // Prepare dependency graph data with safety checks
+  // Prepare dependency graph data with safety checks and WBS hierarchy
   const dependencyGraphData = {
     nodes: (allTasks || []).map(task => ({
       id: task.task_id || 0,
       name: task.task_name ? task.task_name.substring(0, 30) : `Task ${task.task_id || 'Unknown'}`,
-      status: task.status || 'Unknown'
+      status: task.status || 'Unknown',
+      wbs: task.wbs_code || ''
     })),
-    links: (allTasks || [])
-      .filter(task => task && task.predecessors && typeof task.predecessors === 'string' && task.predecessors.trim())
-      .flatMap(task => {
-        try {
-          return task.predecessors.split(',').map(pred => {
-            const source = parseInt(pred.trim())
-            const target = task.task_id
-            if (isNaN(source) || isNaN(target)) {
-              return null
+    links: (() => {
+      const links = []
+      
+      // Add predecessor-based dependencies
+      ;(allTasks || [])
+        .filter(task => task && task.predecessors && typeof task.predecessors === 'string' && task.predecessors.trim())
+        .forEach(task => {
+          try {
+            task.predecessors.split(',').forEach(pred => {
+              const source = parseInt(pred.trim())
+              const target = task.task_id
+              if (!isNaN(source) && !isNaN(target)) {
+                links.push({ source, target, type: 'dependency' })
+              }
+            })
+          } catch (e) {
+            console.warn('Error parsing predecessors for task', task.task_id, e)
+          }
+        })
+      
+      // Add WBS hierarchy links (parent-child relationships)
+      ;(allTasks || []).forEach(task => {
+        if (task.wbs_code && typeof task.wbs_code === 'string') {
+          const wbsParts = task.wbs_code.split('.')
+          if (wbsParts.length > 1) {
+            // Try to find parent WBS
+            const parentWBS = wbsParts.slice(0, -1).join('.')
+            const parentTask = (allTasks || []).find(t => t.wbs_code === parentWBS)
+            if (parentTask) {
+              links.push({ 
+                source: parentTask.task_id, 
+                target: task.task_id, 
+                type: 'hierarchy' 
+              })
             }
-            return { source, target }
-          }).filter(link => link !== null)
-        } catch (e) {
-          console.warn('Error parsing predecessors for task', task.task_id, e)
-          return []
+          }
         }
       })
-      .filter(link => link && !isNaN(link.source) && !isNaN(link.target))
+      
+      return links.filter(link => link && !isNaN(link.source) && !isNaN(link.target))
+    })()
   }
 
   console.log('Dependency Graph Data:', {
     nodes: dependencyGraphData.nodes.length,
     links: dependencyGraphData.links.length,
+    dependencies: dependencyGraphData.links.filter(l => l.type === 'dependency').length,
+    hierarchy: dependencyGraphData.links.filter(l => l.type === 'hierarchy').length,
     sample: dependencyGraphData.links.slice(0, 3)
   })
 
-  // Prepare risk data
+  // Prepare risk data: normalize from 0-100 scale to 0-10 scale
   const riskData = highPriorityTasks.slice(0, 15).map(task => ({
     taskId: `#${task.id}`,
     taskName: task.name,
-    riskScore: task.priority_score || Math.floor(Math.random() * 10) + 1
+    riskScore: task.priority_score ? (task.priority_score / 10) : Math.floor(Math.random() * 10) + 1
   }))
 
   // Prepare timeline data (mock for now)
@@ -271,6 +294,20 @@ const Dashboard = () => {
                   <div className="task-info">
                     <span className="task-id-badge">#{task.id}</span>
                     <span className="task-name">{task.name}</span>
+                    {task.priority_score && (
+                      <span className="priority-score-badge" 
+                            style={{ 
+                              background: task.priority_score >= 7 ? '#ef4444' : 
+                                         task.priority_score >= 5 ? '#f59e0b' : '#10b981',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.75rem',
+                              fontWeight: '600',
+                              marginLeft: '8px'
+                            }}>
+                        Risk: {task.priority_score}
+                      </span>
+                    )}
                   </div>
                   <div className="task-meta">
                     <span className="task-assignee">{task.assignee}</span>
@@ -297,8 +334,15 @@ const Dashboard = () => {
           <div className="insight-card">
             <h3><FiAlertTriangle /> Conflict Detection</h3>
             <div className="insight-list">
-              {resourceConflicts.slice(0, 5).map((conflict, index) => (
-                <div key={index} className="insight-item conflict">
+              {(resourceConflicts.conflicts || [])
+                .sort((a, b) => b.task_count - a.task_count)
+                .slice(0, 8)
+                .map((conflict, index) => (
+                <div 
+                  key={`${conflict.resource}-${conflict.date}-${index}`}
+                  className="insight-item conflict"
+                  title={conflict.tasks ? `Tasks: ${conflict.tasks.join(', ')}` : ''}
+                >
                   <span className="resource-name">{conflict.resource}</span>
                   <span className="conflict-detail">
                     {conflict.task_count} concurrent tasks on {conflict.date}

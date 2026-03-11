@@ -20,11 +20,13 @@ const DependencyGraph = ({ data }) => {
       id: node.id,
       name: node.name,
       status: node.status,
+      wbs: node.wbs || '',
       val: 10 // Node size
     })),
     links: data.links.map(link => ({
       source: link.source,
       target: link.target,
+      type: link.type || 'dependency',
       value: 1
     }))
   }
@@ -44,21 +46,23 @@ const DependencyGraph = ({ data }) => {
     <div className="chart-container dependency-graph-container">
       <h3>Task Dependency Network</h3>
       <div className="graph-info">
-        {data.nodes.length} tasks, {data.links.length} dependencies
+        {data.nodes.length} tasks, {data.links.length} connections 
+        ({data.links.filter(l => l.type === 'dependency').length} dependencies, 
+        {data.links.filter(l => l.type === 'hierarchy').length} WBS hierarchy)
       </div>
       
       <div className="dependency-graph">
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}
-          nodeLabel="name"
+          nodeLabel={(node) => `${node.name} (${node.wbs || node.id})`}
           nodeColor={node => getNodeColor(node.status)}
           nodeRelSize={6}
-          linkColor={() => 'rgba(255, 255, 255, 0.2)'}
-          linkWidth={2}
+          linkColor={(link) => link.type === 'hierarchy' ? 'rgba(139, 92, 246, 0.3)' : 'rgba(59, 130, 246, 0.3)'}
+          linkWidth={(link) => link.type === 'hierarchy' ? 1 : 2}
           linkDirectionalArrowLength={4}
           linkDirectionalArrowRelPos={1}
-          linkDirectionalParticles={2}
+          linkDirectionalParticles={(link) => link.type === 'dependency' ? 2 : 0}
           linkDirectionalParticleWidth={2}
           backgroundColor="transparent"
           width={Math.min(window.innerWidth - 100, 1200)}
@@ -113,6 +117,18 @@ const DependencyGraph = ({ data }) => {
         <div className="legend-item">
           <div className="legend-dot" style={{ background: '#ef4444' }}></div>
           <span>Delayed</span>
+        </div>
+        <div className="legend-item">
+          <div className="legend-dot" style={{ background: '#f59e0b' }}></div>
+          <span>On Hold</span>
+        </div>
+        <div className="legend-item">
+          <div className="legend-line" style={{ background: 'rgba(59, 130, 246, 0.6)', width: '30px', height: '2px' }}></div>
+          <span>Task Dependency</span>
+        </div>
+        <div className="legend-item">
+          <div className="legend-line" style={{ background: 'rgba(139, 92, 246, 0.6)', width: '30px', height: '1px' }}></div>
+          <span>WBS Hierarchy</span>
         </div>
       </div>
     </div>

@@ -180,6 +180,10 @@ async def get_high_priority_tasks():
     Get tasks with high priority/risk
     """
     try:
+        from risk_predictor import RiskPredictor
+        from dependency_analyzer import DependencyAnalyzer
+        from resource_analyzer import ResourceAnalyzer
+        
         csv_path = os.path.join(os.path.dirname(__file__), "../datasets/metro_rail_wbs_data.csv")
         processor = DataProcessor(csv_path)
         
@@ -188,8 +192,20 @@ async def get_high_priority_tasks():
         
         df = processor.get_data()
         
-        # Filter critical tasks for priority display
-        critical_tasks = df[df['Status'].isin(['Not Started', 'In Progress'])].head(10)
+        # Initialize analyzers for risk prediction
+        dep_analyzer = DependencyAnalyzer(df)
+        dep_analyzer.build_dependency_graph()
+        res_analyzer = ResourceAnalyzer(df)
+        risk_predictor = RiskPredictor(df, dep_analyzer, res_analyzer)
+        
+        # Calculate risk scores for all tasks
+        features_df = risk_predictor.extract_features()
+        scores_df = risk_predictor.calculate_risk_score(features_df)
+        
+        # Filter critical tasks and merge with risk scores
+        critical_tasks = df[df['Status'].isin(['Not Started', 'In Progress', 'Delayed'])].copy()
+        critical_tasks = critical_tasks.merge(scores_df[['Task_ID', 'Risk_Score']], left_on='ID', right_on='Task_ID', how='left')
+        critical_tasks = critical_tasks.sort_values('Risk_Score', ascending=False).head(20)
         
         tasks = []
         for _, row in critical_tasks.iterrows():
@@ -200,7 +216,8 @@ async def get_high_priority_tasks():
                 "assignee": row['Resources'],
                 "start_date": str(row['Start_Date']) if pd.notna(row['Start_Date']) else None,
                 "end_date": str(row['Finish_Date']) if pd.notna(row['Finish_Date']) else None,
-                "duration": int(row['Duration_Days']) if pd.notna(row['Duration_Days']) else 0
+                "duration": int(row['Duration_Days']) if pd.notna(row['Duration_Days']) else 0,
+                "priority_score": round(float(row['Risk_Score']), 1) if pd.notna(row.get('Risk_Score')) else 5.0
             })
         
         # Get all tasks for dependency graph (limit to 50 for performance)
@@ -210,6 +227,7 @@ async def get_high_priority_tasks():
                 "task_id": int(row['ID']),
                 "task_name": row['Task_Name'],
                 "status": row['Status'],
+                "wbs_code": row['WBS_Code'],
                 "predecessors": row['Predecessors'] if pd.notna(row['Predecessors']) else None,
                 "start_date": str(row['Start_Date']) if pd.notna(row['Start_Date']) else None,
                 "end_date": str(row['Finish_Date']) if pd.notna(row['Finish_Date']) else None
@@ -228,7 +246,7 @@ async def get_high_priority_tasks():
 @app.get("/api/resource-conflicts")
 async def get_resource_conflicts():
     """
-    Get resource over-allocation issues
+    Get resource over-allocation issues and aggregated resource allocation
     """
     try:
         from resource_analyzer import ResourceAnalyzer
@@ -244,18 +262,72 @@ async def get_resource_conflicts():
         
         overload = analyzer.detect_overallocation()
         
-        # Get top 20 most critical
+        # Get diverse conflicts - sample from different resources to avoid showing same resource repeatedly
         conflicts = []
-        for _, row in overload.head(20).iterrows():
+        seen_resources = set()
+        max_per_resource = 4  # Max conflicts to show per resource
+        resource_counts = {}
+        
+        # Add diversity by limiting repeats of same resource
+        for _, row in overload.iterrows():
+            resource = row['Resource']
+            
+            # Skip if we already have max conflicts from this resource
+            if resource_counts.get(resource, 0) >= max_per_resource:
+                continue
+            
+            task_names = [t['name'] for t in row['Tasks']]
+            
+            # Add context to resource name if it's repeated
+            display_resource = resource
+            if resource_counts.get(resource, 0) > 0:
+                # Add context based on task types
+                task_keywords = ' '.join(task_names).lower()
+                if 'station' in task_keywords:
+                    display_resource = f"{resource} (Station Works)"
+                elif 'tunnel' in task_keywords or 'underground' in task_keywords:
+                    display_resource = f"{resource} (Tunnel Construction)"
+                elif 'piling' in task_keywords or 'foundation' in task_keywords:
+                    display_resource = f"{resource} (Foundation Works)"
+                elif 'track' in task_keywords or 'alignment' in task_keywords:
+                    display_resource = f"{resource} (Track Installation)"
+                else:
+                    display_resource = f"{resource} (Team {resource_counts.get(resource, 0) + 1})"
+            
             conflicts.append({
                 "date": row['Date'],
-                "resource": row['Resource'],
+                "resource": display_resource,
                 "task_count": int(row['Task_Count']),
                 "severity": row['Severity'],
-                "overload_percentage": ((row['Task_Count'] / 4) - 1) * 100
+                "overload_percentage": round(((row['Task_Count'] / 4) - 1) * 100, 1),
+                "tasks": task_names
+            })
+            
+            resource_counts[resource] = resource_counts.get(resource, 0) + 1
+            seen_resources.add(resource)
+            
+            # Stop after collecting enough diverse conflicts
+            if len(conflicts) >= 20:
+                break
+        
+        # Aggregate resource allocation (for heatmap) - average tasks per resource
+        workload_df = analyzer.calculate_daily_workload()
+        resource_avg = workload_df.groupby('Resource')['Task_Count'].mean().reset_index()
+        resource_avg.columns = ['resource', 'avg_task_count']
+        resource_avg = resource_avg.sort_values('avg_task_count', ascending=False)
+        
+        resource_allocation = []
+        for _, row in resource_avg.iterrows():
+            resource_allocation.append({
+                "resource": row['resource'],
+                "taskCount": round(float(row['avg_task_count']), 1)
             })
         
-        return {"conflicts": conflicts, "total_count": len(overload)}
+        return {
+            "conflicts": conflicts, 
+            "total_count": len(overload),
+            "resource_allocation": resource_allocation
+        }
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

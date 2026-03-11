@@ -91,8 +91,6 @@ body::before {
 .glass-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.4);
-  border-color: rgba(148, 163, 184, 0.3);
-}
   border-color: rgba(255, 255, 255, 0.3);
 }
 

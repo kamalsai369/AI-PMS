@@ -49,6 +49,10 @@
   color: #cbd5e1;
 }
 
+.legend-line {
+  display: inline-block;
+}
+
 .legend-dot {
   width: 12px;
   height: 12px;

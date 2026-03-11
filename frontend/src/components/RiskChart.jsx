@@ -11,10 +11,10 @@ const RiskChart = ({ data }) => {
     )
   }
 
-  // Color coding based on risk score
+  // Color coding based on risk score (0-10 scale)
   const getColor = (riskScore) => {
-    if (riskScore >= 8) return '#ef4444' // High risk
-    if (riskScore >= 5) return '#f59e0b' // Medium risk
+    if (riskScore >= 5.5) return '#ef4444' // High risk
+    if (riskScore >= 4.5) return '#f59e0b' // Medium risk
     return '#10b981' // Low risk
   }
 
@@ -23,15 +23,15 @@ const RiskChart = ({ data }) => {
       <h3>Schedule Risk Analysis</h3>
       <div className="risk-summary">
         <div className="risk-stat high">
-          <span className="risk-count">{data.filter(d => d.riskScore >= 8).length}</span>
+          <span className="risk-count">{data.filter(d => d.riskScore >= 5.5).length}</span>
           <span className="risk-label">High Risk</span>
         </div>
         <div className="risk-stat medium">
-          <span className="risk-count">{data.filter(d => d.riskScore >= 5 && d.riskScore < 8).length}</span>
+          <span className="risk-count">{data.filter(d => d.riskScore >= 4.5 && d.riskScore < 5.5).length}</span>
           <span className="risk-label">Medium Risk</span>
         </div>
         <div className="risk-stat low">
-          <span className="risk-count">{data.filter(d => d.riskScore < 5).length}</span>
+          <span className="risk-count">{data.filter(d => d.riskScore < 4.5).length}</span>
           <span className="risk-label">Low Risk</span>
         </div>
       </div>
@@ -50,7 +50,8 @@ const RiskChart = ({ data }) => {
           <YAxis 
             stroke="#cbd5e1"
             style={{ fontSize: '12px' }}
-            label={{ value: 'Risk Score', angle: -90, position: 'insideLeft', style: { fill: '#cbd5e1' } }}
+            domain={[0, 10]}
+            label={{ value: 'Risk Score (0-10)', angle: -90, position: 'insideLeft', style: { fill: '#cbd5e1' } }}
           />
           <Tooltip 
             contentStyle={{ 
